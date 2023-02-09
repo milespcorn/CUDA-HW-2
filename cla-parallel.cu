@@ -446,7 +446,7 @@ void compute_sum(int * sumi, int * bin1, int * bin2, int * ci)
     }
 }
 
-void cla()
+void cla(int * bin1,int *  bin2,int *  gi,int *  pi,int *  ggj,int *  gpj,int *  sgk,int *  spk,int *  sspl,int *  ssgl,int *  sssgm,int *  ssspm,int *  ssscm,int *  sscl,int *  sck,int *  gcj,int *  ci,int *  sumi)
 {
   /***********************************************************************************************************/
   // ADAPT ALL THESE FUNCTUIONS TO BE SEPARATE CUDA KERNEL CALL
@@ -473,22 +473,22 @@ void cla()
     compute_section_gp<<<numBlocks, blockSize >>>(ggj, gpj, sgk, spk);
     //my number of blocks is based off of block size and number of SUPERSECTIONS
     numBlocks = NSUPERSECTIONS / blockSize;
-    compute_super_section_gp<<<numBlocks, blockSize >>>(sgk, spk, sspl, ssgl);
+    compute_super_section_gp<<<numBlocks, blockSize >>>(sgk, spk, sspl, ssgl);//
     //my number of blocks is based off of block size and number of SUPERSUPERSECTIONS
     numBlocks = NSUPERSUPERSECTIONS / blockSize;
-    compute_super_super_section_gp<<<numBlocks, blockSize >>>(ssgl, sspl, sssgm, ssspm);
+    compute_super_super_section_gp<<<numBlocks, blockSize >>>(ssgl, sspl, sssgm, ssspm);//
     //my number of blocks is based off of block size and number of SUPERSUPERSECTIONS (again)
     numBlocks = NSUPERSUPERSECTIONS / blockSize;
-    compute_super_super_section_carry<<<numBlocks, blockSize >>>(ssscm, ssspm, sssgm);
+    compute_super_super_section_carry<<<numBlocks, blockSize >>>(ssscm, ssspm, sssgm);//
     //my number of blocks is based off of block size and number of SUPERSECTIONS
     numBlocks = NSUPERSECTIONS / blockSize;
-    compute_super_section_carry<<<numBlocks, blockSize >>>(ssscm, sscl, ssgl, sspl);
+    compute_super_section_carry<<<numBlocks, blockSize >>>(ssscm, sscl, ssgl, sspl);//
     //my number of blocks is based off of block size and number of SECTIONS
     numBlocks = NSECTIONS / blockSize;
-    compute_section_carry<<<numBlocks, blockSize >>>(sscl, sck, sgk, spk);
+    compute_section_carry<<<numBlocks, blockSize >>>(sscl, sck, sgk, spk);//
     //my number of blocks is based off of block size and number of GROUPS
     numBlocks = NGROUPS / blockSize;
-    compute_group_carry<<<numBlocks, blockSize >>>(sck, gcj, gpj, ggj);
+    compute_group_carry<<<numBlocks, blockSize >>>(sck, gcj, gpj, ggj);//
     //my number of blocks is based off of block size and number of BITS
     numBlocks = BITS / blockSize;
     compute_carry<<<numBlocks, blockSize >>>(gcj, ci, gi, pi);
@@ -504,7 +504,7 @@ void cla()
   /***********************************************************************************************************/
 }
 
-void ripple_carry_adder()
+void ripple_carry_adder(int * bin1,int * bin2)
 {
   int clast=0, cnext=0;
 
@@ -516,7 +516,7 @@ void ripple_carry_adder()
     }
 }
 
-void check_cla_rca()
+void check_cla_rca(int * sumi,int * bin1, int * bin2,int * gi,int * pi,int * ci)
 {
   for(int i = 0; i < bits; i++)
     {
@@ -533,7 +533,14 @@ void check_cla_rca()
 }
 
 int main(int argc, char *argv[])
-{
+{	
+    int * gi, * pi, * ci;
+    int * ggj, * gpj, * gcj;
+    int * sgk, * spk, * sck;
+    int * ssgl, * sspl, * sscl; 
+    int * sssgm, * ssspm,* ssscm;
+    int * bin1, * bin2, * sumi;
+    
     cudaMallocManaged(& gi, bits * sizeof(int));
     cudaMallocManaged(& pi, bits * sizeof(int));
     cudaMallocManaged(& ci, bits * sizeof(int));
@@ -610,18 +617,18 @@ int main(int argc, char *argv[])
   bin2 = gen_formated_binary_from_hex(hexb);
 
   start_time = clock_now();
-  cla();
+  cla(bin1, bin2, gi, pi, ggj, gpj, sgk, spk, sspl, ssgl, sssgm, ssspm, ssscm, sscl, sck, gcj, ci, sumi);//note to self - here is the cla function call.
   end_time = clock_now();
 
   printf("CLA Completed in %llu cycles\n", (end_time - start_time));
 
   start_time = clock_now();
-  ripple_carry_adder();
+  ripple_carry_adder(bin1, bin2);//rippler is here
   end_time = clock_now();
 
   printf("RCA Completed in %llu cycles\n", (end_time - start_time));
 
-  check_cla_rca();
+  check_cla_rca(sumi, bin1, bin2, gi, pi, ci);//checker is here
 
   if( verbose==1 )
     {
