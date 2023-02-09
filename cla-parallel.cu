@@ -23,6 +23,7 @@
 /***********************************************************************************************************/
 // ADAPT AS CUDA managedMalloc memory - e.g., change to pointers and allocate in main function. 
 /***********************************************************************************************************/
+/*
 int gi[bits] = {0};
 int pi[bits] = {0};
 int ci[bits] = {0};
@@ -44,13 +45,13 @@ int ssspm[nsupersupersections] = {0} ;
 int ssscm[nsupersupersections] = {0} ;
 
 int sumi[bits] = {0};
-
+*/
 int sumrca[bits] = {0};
-
+/*
 //Integer array of inputs in binary form
 int* bin1=NULL;
 int* bin2=NULL;
-
+*/
 //Character array of inputs in hex form
 char* hex1=NULL;
 char* hex2=NULL;
@@ -453,28 +454,50 @@ void cla()
   // NOTE: Make sure you set the right CUDA Block Size (e.g., threads per block) for different runs per 
   //       assignment description.
   /***********************************************************************************************************/
-    compute_gp<<<1,1>>>(gi, pi, bin1, bin2);
+    int numBlocks           = 1;
+    int blockSize           = 32;
+    int DIGITS              = 8388608 + 1;
+    int BITS                = (DIGITS * 4);
+    int NGROUPS             = BITS / blockSize;
+    int NSECTIONS           = NGROUPS / blockSize;
+    int NSUPERSECTIONS      = NSECTIONS / blockSize;
+    int NSUPERSUPERSECTIONS = NSUPERSECTIONS / blockSize;
+    //my number of blocks is based off of block size and number of BITS
+    numBlocks = BITS / blockSize;
+    compute_gp<<<numBlocks,blockSize>>>(gi, pi, bin1, bin2);
+    //my number of blocks is based off of block size and number of GROUPS
+    numBlocks = NGROUPS / blockSize;
+    compute_group_gp <<<numBlocks, blockSize >>> (gi, pi, ggj, gpj);
+    //my number of blocks is based off of block size and number of SECTIONS
+    numBlocks = NSECTIONS / blockSize;
+    compute_section_gp<<<numBlocks, blockSize >>>(ggj, gpj, sgk, spk);
+    //my number of blocks is based off of block size and number of SUPERSECTIONS
+    numBlocks = NSUPERSECTIONS / blockSize;
+    compute_super_section_gp<<<numBlocks, blockSize >>>(sgk, spk, sspl, ssgl);
+    //my number of blocks is based off of block size and number of SUPERSUPERSECTIONS
+    numBlocks = NSUPERSUPERSECTIONS / blockSize;
+    compute_super_super_section_gp<<<numBlocks, blockSize >>>(ssgl, sspl, sssgm, ssspm);
+    //my number of blocks is based off of block size and number of SUPERSUPERSECTIONS (again)
+    numBlocks = NSUPERSUPERSECTIONS / blockSize;
+    compute_super_super_section_carry<<<numBlocks, blockSize >>>(ssscm, ssspm, sssgm);
+    //my number of blocks is based off of block size and number of SUPERSECTIONS
+    numBlocks = NSUPERSECTIONS / blockSize;
+    compute_super_section_carry<<<numBlocks, blockSize >>>(ssscm, sscl, ssgl, sspl);
+    //my number of blocks is based off of block size and number of SECTIONS
+    numBlocks = NSECTIONS / blockSize;
+    compute_section_carry<<<numBlocks, blockSize >>>(sscl, sck, sgk, spk);
+    //my number of blocks is based off of block size and number of GROUPS
+    numBlocks = NGROUPS / blockSize;
+    compute_group_carry<<<numBlocks, blockSize >>>(sck, gcj, gpj, ggj);
+    //my number of blocks is based off of block size and number of BITS
+    numBlocks = BITS / blockSize;
+    compute_carry<<<numBlocks, blockSize >>>(gcj, ci, gi, pi);
+    
+    //my number of blocks is based off of block size and number of BITS
+    numBlocks = BITS / blockSize;
+    compute_sum<<<numBlocks, blockSize >>>(sumi, bin1, bin2, ci);
 
-    compute_group_gp <<<1, 1 >>> (gi, pi, ggj, gpj);
-    
-    compute_section_gp<<<1,1,>>>(ggj, gpj, sgk, spk);
-    
-    compute_super_section_gp<<<1,1>>>(sgk, spk, sspl, ssgl);
-    
-    compute_super_super_section_gp<<<1,1>>>(ssgl, sspl, sssgm, ssspm);
-    
-    compute_super_super_section_carry<<<1,1>>>(ssscm, ssspm, sssgm);
-    
-    compute_super_section_carry<<<1,1>>>(ssscm, sscl, ssgl, sspl);
-    
-    compute_section_carry<<<1,1>>>(sscl, sck, sgk, spk);
-    
-    compute_group_carry<<<1,1>>>(sck, gcj, gpj, ggj);
-    
-    compute_carry<<<1,1>>>(gcj, ci, gi, pi);
-    
-    compute_sum<<<1,1>>>(sumi, bin1, bin2, ci);
-
+    cudaDeviceSynchronize();
 
   /***********************************************************************************************************/
   // INSERT RIGHT CUDA SYNCHRONIZATION AT END!
@@ -511,6 +534,41 @@ void check_cla_rca()
 
 int main(int argc, char *argv[])
 {
+    cudaMallocManaged(& gi, bits * sizeof(int));
+    cudaMallocManaged(& pi, bits * sizeof(int));
+    cudaMallocManaged(& ci, bits * sizeof(int));
+
+    cudaMallocManaged(& ggj, ngroups * sizeof(int));
+    cudaMallocManaged(& gpj, ngroups * sizeof(int));
+    cudaMallocManaged(& gcj, ngroups * sizeof(int));
+
+    cudaMallocManaged(& sgk, nsections * sizeof(int));
+    cudaMallocManaged(& spk, nsections * sizeof(int));
+    cudaMallocManaged(& sck, nsections * sizeof(int));
+
+    cudaMallocManaged(& ssgl,nsupersections * sizeof(int));
+    cudaMallocManaged(& sspl, nsupersections * sizeof(int));
+    cudaMallocManaged(& sscl, nsupersections * sizeof(int));
+
+    cudaMallocManaged(& sssgm, nsupersupersections * sizeof(int));
+    cudaMallocManaged(& ssspm, nsupersupersections * sizeof(int));
+    cudaMallocManaged(& ssscm, nsupersupersections * sizeof(int));
+
+    cudaMallocManaged(& bin1, bits * sizeof(int));
+    cudaMallocManaged(& bin2, bits * sizeof(int));
+
+    cudaMallocManaged(& sumi, bits * sizeof(int));
+
+    /*
+    //Integer array of inputs in binary form
+    int* bin1 = NULL;
+    int* bin2 = NULL;
+    */
+
+
+
+
+
   int randomGenerateFlag = 1;
   int deterministic_seed = (1<<30) - 1;
   char* hexa=NULL;
@@ -603,6 +661,33 @@ int main(int argc, char *argv[])
     printf("%s\n",hexSum);
   
   free(hexSum);
+
+  cudaFree(gi);
+  cudaFree(pi);
+  cudaFree(ci);
+
+  cudaFree(ggj);
+  cudaFree(gpj);
+  cudaFree(gcj);
+
+  cudaFree(sgk);
+  cudaFree(spk);
+  cudaFree(sck);
+
+  cudaFree(ssgl);
+  cudaFree(sspl);
+  cudaFree(sscl);
+
+  cudaFree(sssgm);
+  cudaFree(ssspm);
+  cudaFree(ssscm);
+
+
+  cudaFree(bin1);
+  cudaFree(bin2);
+
+
+  cudaFree(sumi);
   
   return 0;
 }
