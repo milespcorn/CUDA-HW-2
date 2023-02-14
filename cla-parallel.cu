@@ -239,6 +239,41 @@ void compute_group_gp()
 	free(gpj_group);
     }
 }
+__global__
+void global_compute_group_gp(int * p_gi, int * p_pi, int * p_ggj,int * p_gpj)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+    for (int j = index; j < ngroups; j+=stride)
+    {
+        int jstart = j * block_size;
+        int* ggj_group = device_grab_slice(p_gi, jstart, block_size);
+        int* gpj_group = device_grab_slice(p_pi, jstart, block_size);
+
+        int sum = 0;
+        for (int i = 0; i < block_size; i++)
+        {
+            int mult = ggj_group[i]; //grabs the g_i term for the multiplication
+            for (int ii = block_size - 1; ii > i; ii--)
+            {
+                mult &= gpj_group[ii]; //grabs the p_i terms and multiplies it with the previously multiplied stuff (or the g_i term if first round)
+            }
+            sum |= mult; //sum up each of these things with an or
+        }
+        p_ggj[j] = sum;
+
+        int mult = gpj_group[0];
+        for (int i = 1; i < block_size; i++)
+        {
+            mult &= gpj_group[i];
+        }
+        p_gpj[j] = mult;
+
+        // free from grab_slice allocation
+        free(ggj_group);
+        free(gpj_group);
+    }
+}
 
 /***********************************************************************************************************/
 // ADAPT AS CUDA KERNEL 
@@ -274,6 +309,41 @@ void compute_section_gp()
       // free from grab_slice allocation
       free(sgk_group);
       free(spk_group);
+    }
+}
+__global__
+void global_compute_section_gp(int * p_ggj,int * p_gpj,int * p_sgk,int * p_spk)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+    for (int k = index; k < nsections; k+=stride)
+    {
+        int kstart = k * block_size;
+        int* sgk_group = device_grab_slice(p_ggj, kstart, block_size);
+        int* spk_group = device_grab_slice(p_gpj, kstart, block_size);
+
+        int sum = 0;
+        for (int i = 0; i < block_size; i++)
+        {
+            int mult = sgk_group[i];
+            for (int ii = block_size - 1; ii > i; ii--)
+            {
+                mult &= spk_group[ii];
+            }
+            sum |= mult;
+        }
+        p_sgk[k] = sum;
+
+        int mult = spk_group[0];
+        for (int i = 1; i < block_size; i++)
+        {
+            mult &= spk_group[i];
+        }
+        p_spk[k] = mult;
+
+        // free from grab_slice allocation
+        free(sgk_group);
+        free(spk_group);
     }
 }
 
@@ -313,7 +383,41 @@ void compute_super_section_gp()
       free(sspl_group);
     }
 }
+__global__
+void global_compute_super_section_gp(int * p_sgk, int* p_spk, int* p_ssgl, int* p_sspl)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+    for (int l = index; l < nsupersections; l+=stride)
+    {
+        int lstart = l * block_size;
+        int* ssgl_group = device_grab_slice(p_sgk, lstart, block_size);
+        int* sspl_group = device_grab_slice(p_spk, lstart, block_size);
 
+        int sum = 0;
+        for (int i = 0; i < block_size; i++)
+        {
+            int mult = ssgl_group[i];
+            for (int ii = block_size - 1; ii > i; ii--)
+            {
+                mult &= sspl_group[ii];
+            }
+            sum |= mult;
+        }
+        p_ssgl[l] = sum;
+
+        int mult = sspl_group[0];
+        for (int i = 1; i < block_size; i++)
+        {
+            mult &= sspl_group[i];
+        }
+        p_sspl[l] = mult;
+
+        // free from grab_slice allocation
+        free(ssgl_group);
+        free(sspl_group);
+    }
+}
 /***********************************************************************************************************/
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
@@ -647,9 +751,18 @@ void cla(int * p_gi,int * p_pi,int * p_ci,  int *  p_ggj,int * p_gpj,int * p_gcj
     global_compute_gp<<<blocks,threads_per_block>>>(p_gi, p_pi, bin1, bin2);
     cudaDeviceSynchronize();
     
-    compute_group_gp();
-    compute_section_gp();
-    compute_super_section_gp();
+    //compute_group_gp();
+    global_compute_group_gp<<<blocks,threads_per_block>>>( p_gi, p_pi, p_ggj, p_gpj);
+    cudaDeviceSynchronize();
+
+    //compute_section_gp();
+    global_compute_section_gp<<<blocks,threads_per_block>>>(p_ggj, p_gpj, p_sgk, p_spk);
+    cudaDeviceSynchronize();
+
+    //compute_super_section_gp();
+    global_compute_super_section_gp<<<blocks,threads_per_block>>>(p_sgk, p_spk, p_ssgl, p_sspl);
+    cudaDeviceSynchronize();
+
     //compute_super_super_section_gp();
     global_compute_super_super_section_gp<<<blocks, threads_per_block>>>( p_ssgl, p_sspl, p_sssgm, p_ssspm);
     cudaDeviceSynchronize();
