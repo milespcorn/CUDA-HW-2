@@ -1,7 +1,7 @@
 /*********************************************************************/
 /* cla.h ************************************************************/
 /*********************************************************************/
-//
+// 02/02/2023 - Fixed warning and compiler errors for IBM XLC.
 // 01/14/2022: Revised Version that fixes buffer overruns & mem leaks
 // Used Valgrind
 //
@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
+#include "clockcycle.h"
 
 /*********************************************************************/
 /* Forward Inline Functions ******************************************/
@@ -82,7 +83,7 @@ char hex_lookup(int in)
 
 char* generate_random_hex(size_t len)
 {
-    char* output = calloc(len+1,sizeof(char));
+  char* output = (char *)calloc(len+1,sizeof(char));
     output[len] = '\0';
     for(int i = 0; i < len; i++)
     {
@@ -98,7 +99,7 @@ char* generate_random_hex(size_t len)
 char* prepend_non_sig_zero(char* str)
 {
     size_t len = strlen(str);
-    char* output = calloc(len+2,sizeof(char));
+    char* output = (char *)calloc(len+2,sizeof(char));
     output[0] = '0';
     output[len+1] = '\0';
     for(int i = 1; i < len+1; i++)
@@ -117,7 +118,7 @@ int* string_to_int(char* str)
 {
     size_t len = strlen(str);
 
-    int* output = calloc(len+1,sizeof(int));
+    int* output = (int *)calloc(len+1,sizeof(int));
 
     for(int i = 0; i < len; i++)
     {
@@ -133,7 +134,7 @@ int* string_to_int(char* str)
 
 char* int_to_string(int* in, size_t len)
 {
-    char* output = calloc(len+1,sizeof(char));
+  char* output = (char *)calloc(len+1,sizeof(char));
 
     int buflen = 0;
     for(int i = 0; i < len; i++)
@@ -153,23 +154,23 @@ char* hex_to_binary_single(char theDigit)
     char* binaryVersion;
     switch(theDigit)
     {
-        case '0': binaryVersion = "0000"; break;
-        case '1': binaryVersion = "0001"; break;
-        case '2': binaryVersion = "0010"; break;
-        case '3': binaryVersion = "0011"; break;
-        case '4': binaryVersion = "0100"; break;
-        case '5': binaryVersion = "0101"; break;
-        case '6': binaryVersion = "0110"; break;
-        case '7': binaryVersion = "0111"; break;
-        case '8': binaryVersion = "1000"; break;
-        case '9': binaryVersion = "1001"; break;
-        case 'A': binaryVersion = "1010"; break;
-        case 'B': binaryVersion = "1011"; break;
-        case 'C': binaryVersion = "1100"; break;
-        case 'D': binaryVersion = "1101"; break;
-        case 'E': binaryVersion = "1110"; break;
-        case 'F': binaryVersion = "1111"; break;
-        default: binaryVersion = "0000"; break;
+    case '0': binaryVersion = (char *)"0000"; break;
+    case '1': binaryVersion = (char *)"0001"; break;
+    case '2': binaryVersion = (char *)"0010"; break;
+        case '3': binaryVersion = (char *)"0011"; break;
+        case '4': binaryVersion = (char *)"0100"; break;
+        case '5': binaryVersion = (char *)"0101"; break;
+        case '6': binaryVersion = (char *)"0110"; break;
+        case '7': binaryVersion = (char *)"0111"; break;
+        case '8': binaryVersion = (char *)"1000"; break;
+        case '9': binaryVersion = (char *)"1001"; break;
+        case 'A': binaryVersion = (char *)"1010"; break;
+        case 'B': binaryVersion = (char *)"1011"; break;
+        case 'C': binaryVersion = (char *)"1100"; break;
+        case 'D': binaryVersion = (char *)"1101"; break;
+        case 'E': binaryVersion = (char *)"1110"; break;
+        case 'F': binaryVersion = (char *)"1111"; break;
+        default: binaryVersion = (char *)"0000"; break;
     }
     return binaryVersion;
 }
@@ -181,7 +182,7 @@ char* hex_to_binary_single(char theDigit)
 char binary_quad_to_hex_single(char *binary)
 {
     char hexVersion;
-    char* buffer = calloc(5, sizeof(char));
+    char* buffer = (char *)calloc(5, sizeof(char));
     buffer[4] = '\0';
 
     long int hexInt = strtol(binary, NULL,2);
@@ -205,7 +206,7 @@ char* revbinary_to_hex(char* binaryLine,int len)
     reverse_string(binaryLine, strlen(binaryLine));
 
     size_t blen = (size_t)len/4 + (len%4);
-    char* buffer = calloc(blen+1,sizeof(char));
+    char* buffer = (char *)calloc(blen+1,sizeof(char));
     buffer[blen] = '\0';
     int bufferLength = 0;
     for(int j = 0; j < blen; j++)
@@ -227,7 +228,7 @@ char* revbinary_to_hex(char* binaryLine,int len)
 char* hex_to_binary(char* hexString)
 {
     size_t num = strlen(hexString);
-    char* buffer = calloc(num*4+1, sizeof(char));
+    char* buffer = (char *)calloc(num*4+1, sizeof(char));
     buffer[num*4] = '\0';
     int len = 0;
 
@@ -290,7 +291,7 @@ void print_chararrayln(char *in)
 
 int* grab_slice(int* input, int starti, int length)
 {
-    int* output = calloc((size_t)length,sizeof(int));
+  int* output = (int *)calloc((size_t)length,sizeof(int));
 
     int i,j;
     for(i = 0, j = starti; i<length; i++,j++)
@@ -306,7 +307,7 @@ int* grab_slice(int* input, int starti, int length)
 
 char* grab_slice_char(char* input, int starti, int length)
 {
-    char* output = calloc((size_t)length+1,sizeof(char));
+  char* output = (char *)calloc((size_t)length+1,sizeof(char));
 
     int i,j;
     for(i = 0, j = starti; i<length; i++,j++)
@@ -317,6 +318,5 @@ char* grab_slice_char(char* input, int starti, int length)
     
     return output;
 }
-
 
 #endif //CLA_MAIN_C_H

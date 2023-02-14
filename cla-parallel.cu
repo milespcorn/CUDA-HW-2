@@ -4,12 +4,18 @@
 //
 /*********************************************************************/
 
+
 #include "main.h"
+#include "clockcycle.h"
 
 //Touch these defines
 #define input_size 8388608 // hex digits 
 #define block_size 32
 #define verbose 0
+
+#define blocks 2048
+#define threads_per_block 2048
+
 
 //Do not touch these defines
 #define digits (input_size+1)
@@ -23,7 +29,6 @@
 /***********************************************************************************************************/
 // ADAPT AS CUDA managedMalloc memory - e.g., change to pointers and allocate in main function. 
 /***********************************************************************************************************/
-/*
 int gi[bits] = {0};
 int pi[bits] = {0};
 int ci[bits] = {0};
@@ -45,16 +50,43 @@ int ssspm[nsupersupersections] = {0} ;
 int ssscm[nsupersupersections] = {0} ;
 
 int sumi[bits] = {0};
-*/
+
 int sumrca[bits] = {0};
-/*
+
 //Integer array of inputs in binary form
 int* bin1=NULL;
 int* bin2=NULL;
-*/
+
 //Character array of inputs in hex form
 char* hex1=NULL;
 char* hex2=NULL;
+
+
+
+/***************************************************************/
+//making pointers to the host arrays - later, these will be cudaMalloc-ed
+int * p_gi 	= gi;
+int * p_pi 	= pi;
+int * p_ci 	= ci;
+
+int * p_ggj 	= ggj;
+int * p_gpj 	= gpj;
+int * p_gcj	= gcj;
+
+int * p_sgk	= sgk;
+int * p_spk	= spk;
+int * p_sck	= sck;
+
+int * p_ssgl	= ssgl;
+int * p_sspl	= sspl;
+int * p_sscl 	= sscl;
+
+int * p_sssgm	= sssgm;
+int * p_ssspm 	= ssspm;
+int * p_ssscm	= ssscm;
+
+int * p_sumi	= sumi;
+/***************************************************************/
 
 void read_input()
 {
@@ -78,25 +110,96 @@ void read_input()
   free(in1);
   free(in2);
 }
+__device__
+int* device_grab_slice(int* input, int starti, int length)
+{
+  int* output;
+  cudaMalloc(&output, length*sizeof(int));
+
+    int i,j;
+    for(i = 0, j = starti; i<length; i++,j++)
+    {
+        output[i] = input[j];
+    }
+    return output;
+}
+
+void allocate_cuda_memory()//cuda allocate pointers. Something about shared memory?
+{
+	cudaMallocManaged (&p_gi, bits*sizeof(int));
+	cudaMallocManaged (&p_pi, bits*sizeof(int));
+	cudaMallocManaged (&p_ci, bits*sizeof(int));
+
+	cudaMallocManaged (&p_ggj, ngroups*sizeof(int));
+	cudaMallocManaged (&p_gpj, ngroups*sizeof(int));
+	cudaMallocManaged (&p_gcj, ngroups*sizeof(int));
+
+	cudaMallocManaged (&p_sgk, nsections*sizeof(int));
+	cudaMallocManaged (&p_spk, nsections*sizeof(int));
+	cudaMallocManaged (&p_sck, nsections*sizeof(int));
+
+	cudaMallocManaged (&p_ssgl, nsupersections*sizeof(int));
+	cudaMallocManaged (&p_sspl, nsupersections*sizeof(int));
+	cudaMallocManaged (&p_sscl, nsupersections*sizeof(int));
+
+	cudaMallocManaged (&p_sssgm, nsupersupersections*sizeof(int));
+	cudaMallocManaged (&p_ssspm, nsupersupersections*sizeof(int));
+	cudaMallocManaged (&p_ssscm, nsupersupersections*sizeof(int));
+
+	cudaMallocManaged (&p_sumi, bits*sizeof(int));
+	cudaMallocManaged (&bin1, bits*sizeof(int));
+	cudaMallocManaged (&bin2, bits*sizeof(int));
+
+}
+void free_cuda_memory()//free pointers. Something about memory leaks? IDK I'm a math major.
+{
+	cudaFree (&p_gi);
+	cudaFree (&p_pi);
+	cudaFree (&p_ci);
+
+	cudaFree (&p_ggj);
+	cudaFree (&p_gpj);
+	cudaFree (&p_gcj);
+
+	cudaFree (&p_sgk);
+	cudaFree (&p_spk);
+	cudaFree (&p_sck);
+
+	cudaFree (&p_ssgl);
+	cudaFree (&p_sspl);
+	cudaFree (&p_sscl);
+
+	cudaFree (&p_sssgm);
+	cudaFree (&p_ssspm);
+	cudaFree (&p_ssscm);
+
+	cudaFree (&p_sumi);
+	cudaFree (&bin1);
+	cudaFree (&bin2);
+
+}
 
 /***********************************************************************************************************/
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-//make the thing a kernel
-__global__
-void compute_gp(int * gi, int * pi, int * bin1, int * bin2)
+void compute_gp()
 {
-    //add the things to allow the kernel to divide the task and to keep track of indices
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-    
-    
-    //for(int i = 0; i < bits; i++)
-    for (int i = index; i < bits; i+=stride)
+    for(int i = 0; i < bits; i++)
     {
         gi[i] = bin1[i] & bin2[i];
         pi[i] = bin1[i] | bin2[i];
+    }
+}
+__global__
+void global_compute_gp(int * p_gi,int *  p_pi,int *  bin1,int *  bin2)
+{
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+    for(int i = index; i < bits; i+=stride)
+    {
+        p_gi[i] = bin1[i] & bin2[i];
+        p_pi[i] = bin1[i] | bin2[i];
     }
 }
 
@@ -104,17 +207,9 @@ void compute_gp(int * gi, int * pi, int * bin1, int * bin2)
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-//make the thing a kernel
-__global__
-void compute_group_gp(int * gi, int * pi, int * ggj, int * gpj)
+void compute_group_gp()
 {
-    //add the things to allow the kernel to divide the task and to keep track of indices
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-
-
-    //for(int j = 0; j < ngroups; j++)
-    for (int j = index; j < ngroups; j+=stride)
+    for(int j = 0; j < ngroups; j++)
     {
         int jstart = j*block_size;
         int* ggj_group = grab_slice(gi,jstart,block_size);
@@ -149,17 +244,9 @@ void compute_group_gp(int * gi, int * pi, int * ggj, int * gpj)
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-//make the thing a kernel
-__global__
-void compute_section_gp(int * ggj, int * gpj, int * sgk, int * spk)
+void compute_section_gp()
 {
-
- //add the things to allow the kernel to divide the task and to keep track of indices
- int index = blockIdx.x * blockDim.x + threadIdx.x;
- int stride = blockDim.x * gridDim.x;
-
-  //for(int k = 0; k < nsections; k++)
-    for (int k = index; k < nsections; k+=stride)
+  for(int k = 0; k < nsections; k++)
     {
       int kstart = k*block_size;
       int* sgk_group = grab_slice(ggj,kstart,block_size);
@@ -194,16 +281,9 @@ void compute_section_gp(int * ggj, int * gpj, int * sgk, int * spk)
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-//make the thing a kernel
-__global__
-void compute_super_section_gp(int * sgk, int * spk, int * sspl, int * ssgl)
+void compute_super_section_gp()
 {
-    //add the things to allow the kernel to divide the task and to keep track of indices
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-
-  //for(int l = 0; l < nsupersections ; l++)
-    for (int l = index; l < nsupersections; l+=stride)
+  for(int l = 0; l < nsupersections ; l++)
     {
       int lstart = l*block_size;
       int* ssgl_group = grab_slice(sgk,lstart,block_size);
@@ -238,15 +318,9 @@ void compute_super_section_gp(int * sgk, int * spk, int * sspl, int * ssgl)
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-//make the thing a kernel
-__global__
-void compute_super_super_section_gp(int * ssgl, int * sspl, int * sssgm, int * ssspm)
+void compute_super_super_section_gp()
 {
-    //add the things to allow the kernel to divide the task and to keep track of indices
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-
-  for(int m = index; m < nsupersupersections ; m+=stride)
+  for(int m = 0; m < nsupersupersections ; m++)
     {
       int mstart = m*block_size;
       int* sssgm_group = grab_slice(ssgl,mstart,block_size);
@@ -276,20 +350,48 @@ void compute_super_super_section_gp(int * ssgl, int * sspl, int * sssgm, int * s
       free(ssspm_group);
     }
 }
-
+__global__
+void global_compute_super_super_section_gp(int * p_ssgl,int * p_sspl,int * p_sssgm,int * p_ssspm)
+{
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+  for(int m = index; m < nsupersupersections ; m+=stride)
+    {
+      int mstart = m*block_size;
+      int* sssgm_group = device_grab_slice(p_ssgl,mstart,block_size);
+      int* ssspm_group = device_grab_slice(p_sspl,mstart,block_size);
+      
+      int sum = 0;
+      for(int i = 0; i < block_size; i++)
+        {
+	  int mult = sssgm_group[i];
+	  for(int ii = block_size-1; ii > i; ii--)
+            {
+	      mult &= ssspm_group[ii];
+            }
+	  sum |= mult;
+        }
+      p_sssgm[m] = sum;
+      
+      int mult = ssspm_group[0];
+      for(int i = 1; i < block_size; i++)
+        {
+	  mult &= ssspm_group[i];
+        }
+      p_ssspm[m] = mult;
+      
+      // free from grab_slice allocation
+      free(sssgm_group);
+      free(ssspm_group);
+    }
+}
 /***********************************************************************************************************/
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-//make the thing a kernel
-__global__
-void compute_super_super_section_carry(int * ssscm, int * ssspm, int * sssgm)
+void compute_super_super_section_carry()
 {
-    //add the things to allow the kernel to divide the task and to keep track of indices
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-
-  for(int m = index; m < nsupersupersections; m+=stride)
+  for(int m = 0; m < nsupersupersections; m++)
     {
       int ssscmlast=0;
       if(m==0)
@@ -304,20 +406,34 @@ void compute_super_super_section_carry(int * ssscm, int * ssspm, int * sssgm)
       ssscm[m] = sssgm[m] | (ssspm[m]&ssscmlast);
     }
 }
+__global__
+void global_compute_super_super_section_carry(int * p_ssscm,int * p_sssgm,int * p_ssspm)
+{
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+  int stride = blockDim.x * gridDim.x;
+  for(int m = index; m < nsupersupersections; m+=stride)
+    {
+      int ssscmlast=0;
+      if(m==0)
+        {
+	  ssscmlast = 0;
+        }
+      else
+        {
+	  ssscmlast = p_ssscm[m-1];
+        }
+      
+      p_ssscm[m] = p_sssgm[m] | (p_ssspm[m]&ssscmlast);
+    }
+}
 
 /***********************************************************************************************************/
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-//make the thing a kernel
-__global__
-void compute_super_section_carry(int * ssscm, int * sscl, int * ssgl, int * sspl)
+void compute_super_section_carry()
 {
-    //add the things to allow the kernel to divide the task and to keep track of indices
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-
-  for(int l = index; l < nsupersections; l+=stride)
+  for(int l = 0; l < nsupersections; l++)
     {
       int sscllast=0;
       if(l%block_size == block_size-1)
@@ -332,20 +448,34 @@ void compute_super_section_carry(int * ssscm, int * sscl, int * ssgl, int * sspl
       sscl[l] = ssgl[l] | (sspl[l]&sscllast);
     }
 }
+__global__
+void global_compute_super_section_carry(int * p_ssscm,int *  p_sscl,int *  p_ssgl,int *  p_sspl)
+{
+  int index = blockIdx.x * blockDim.x + threadIdx.x;
+   int stride = blockDim.x * gridDim.x;
+  for(int l = index; l < nsupersections; l+=stride)
+    {
+      int sscllast=0;
+      if(l%block_size == block_size-1)
+        {
+	  sscllast = p_ssscm[l/block_size];
+        }
+      else if( l != 0 )
+        {
+	  sscllast = p_sscl[l-1];
+        }
+      
+      p_sscl[l] = p_ssgl[l] | (p_sspl[l]&sscllast);
+    }
+}
 
 /***********************************************************************************************************/
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-//make the thing a kernel
-__global__
-void compute_section_carry(int * sscl, int * sck, int * sgk, int * spk)
+void compute_section_carry()
 {
-    //add the things to allow the kernel to divide the task and to keep track of indices
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-
-  for(int k = index; k < nsections; k+=stride)
+  for(int k = 0; k < nsections; k++)
     {
       int scklast=0;
       if(k%block_size==block_size-1)
@@ -360,21 +490,35 @@ void compute_section_carry(int * sscl, int * sck, int * sgk, int * spk)
       sck[k] = sgk[k] | (spk[k]&scklast);
     }
 }
+__global__
+void global_compute_section_carry(int * p_sscl,int * p_sck,int * p_sgk, int * p_spk)
+{
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   int stride = blockDim.x * gridDim.x;
+  for(int k = index; k < nsections; k+=stride)
+    {
+      int scklast=0;
+      if(k%block_size==block_size-1)
+        {
+	  scklast = p_sscl[k/block_size];
+        }
+      else if( k != 0 )
+        {
+	  scklast = p_sck[k-1];
+        }
+      
+      p_sck[k] = p_sgk[k] | (p_spk[k]&scklast);
+    }
+}
 
 
 /***********************************************************************************************************/
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-//make the thing a kernel
-__global__
-void compute_group_carry(int * sck, int * gcj, int * gpj, int * ggj)
+void compute_group_carry()
 {
-    //add the things to allow the kernel to divide the task and to keep track of indices
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-
-  for(int j = index; j < ngroups; j+=stride)
+  for(int j = 0; j < ngroups; j++)
     {
       int gcjlast=0;
       if(j%block_size==block_size-1)
@@ -389,20 +533,33 @@ void compute_group_carry(int * sck, int * gcj, int * gpj, int * ggj)
       gcj[j] = ggj[j] | (gpj[j]&gcjlast);
     }
 }
-
+__global__
+void global_compute_group_carry(int * p_sck, int * p_gcj, int * p_ggj, int * p_gpj)
+{
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   int stride = blockDim.x * gridDim.x;
+  for(int j = index; j < ngroups; j+= stride)
+    {
+      int gcjlast=0;
+      if(j%block_size==block_size-1)
+        {
+	  gcjlast = p_sck[j/block_size];
+        }
+      else if( j != 0 )
+        {
+	  gcjlast = p_gcj[j-1];
+        }
+      
+      p_gcj[j] = p_ggj[j] | (p_gpj[j]&gcjlast);
+    }
+}
 /***********************************************************************************************************/
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-//make the thing a kernel
-__global__
-void compute_carry(int * gcj, int * ci, int * gi, int * pi)
+void compute_carry()
 {
-    //add the things to allow the kernel to divide the task and to keep track of indices
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-
-  for(int i = index; i < bits; i+=stride)
+  for(int i = 0; i < bits; i++)
     {
       int clast=0;
       if(i%block_size==block_size-1)
@@ -417,21 +574,34 @@ void compute_carry(int * gcj, int * ci, int * gi, int * pi)
       ci[i] = gi[i] | (pi[i]&clast);
     }
 }
+__global__
+void global_compute_carry(int * p_gi, int * p_pi, int * p_ci, int * p_gcj)
+{
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   int stride = blockDim.x * gridDim.x;
+  for(int i = index; i < bits; i+=stride)
+    {
+      int clast=0;
+      if(i%block_size==block_size-1)
+        {
+	  clast = p_gcj[i/block_size];
+        }
+      else if( i != 0 )
+        {
+	  clast = p_ci[i-1];
+        }
+      
+      p_ci[i] = p_gi[i] | (p_pi[i]&clast);
+    }
+}
 
 /***********************************************************************************************************/
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-
-//make the thing a kernel
-__global__
-void compute_sum(int * sumi, int * bin1, int * bin2, int * ci)
+void compute_sum()
 {
-    //add the things to allow the kernel to divide the task and to keep track of indices
-    int index = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-
-  for(int i = index; i < bits; i+=stride)
+  for(int i = 0; i < bits; i++)
     {
       int clast=0;
       if(i==0)
@@ -445,8 +615,27 @@ void compute_sum(int * sumi, int * bin1, int * bin2, int * ci)
       sumi[i] = bin1[i] ^ bin2[i] ^ clast;
     }
 }
+__global__
+void global_compute_sum(int * bin1, int * bin2, int * p_ci, int * p_sumi)
+{
+   int index = blockIdx.x * blockDim.x + threadIdx.x;
+   int stride = blockDim.x * gridDim.x;
+  for(int i = index; i < bits; i+=stride)
+    {
+      int clast=0;
+      if(i==0)
+        {
+	  clast = 0;
+        }
+      else
+        {
+	  clast = p_ci[i-1];
+        }
+      p_sumi[i] = bin1[i] ^ bin2[i] ^ clast;
+    }
+}
 
-void cla(int * bin1,int *  bin2,int *  gi,int *  pi,int *  ggj,int *  gpj,int *  sgk,int *  spk,int *  sspl,int *  ssgl,int *  sssgm,int *  ssspm,int *  ssscm,int *  sscl,int *  sck,int *  gcj,int *  ci,int *  sumi)
+void cla(int * p_gi,int * p_pi,int * p_ci,  int *  p_ggj,int * p_gpj,int * p_gcj,  int *  p_sgk,int * p_spk,int * p_sck,  int *  p_ssgl,int * p_sspl,int * p_sscl,  int *  p_sssgm,int * p_ssspm,int * p_ssscm,   int * p_sumi,int * bin1,int * bin2)
 {
   /***********************************************************************************************************/
   // ADAPT ALL THESE FUNCTUIONS TO BE SEPARATE CUDA KERNEL CALL
@@ -454,49 +643,41 @@ void cla(int * bin1,int *  bin2,int *  gi,int *  pi,int *  ggj,int *  gpj,int * 
   // NOTE: Make sure you set the right CUDA Block Size (e.g., threads per block) for different runs per 
   //       assignment description.
   /***********************************************************************************************************/
-    int numBlocks           = 1;
-    int blockSize           = 32;
-    int DIGITS              = 8388608 + 1;
-    int BITS                = (DIGITS * 4);
-    int NGROUPS             = BITS / blockSize;
-    int NSECTIONS           = NGROUPS / blockSize;
-    int NSUPERSECTIONS      = NSECTIONS / blockSize;
-    int NSUPERSUPERSECTIONS = NSUPERSECTIONS / blockSize;
-    //my number of blocks is based off of block size and number of BITS
-    numBlocks = BITS / blockSize;
-    compute_gp<<<numBlocks,blockSize>>>(gi, pi, bin1, bin2);
-    //my number of blocks is based off of block size and number of GROUPS
-    numBlocks = NGROUPS / blockSize;
-    compute_group_gp <<<numBlocks, blockSize >>> (gi, pi, ggj, gpj);
-    //my number of blocks is based off of block size and number of SECTIONS
-    numBlocks = NSECTIONS / blockSize;
-    compute_section_gp<<<numBlocks, blockSize >>>(ggj, gpj, sgk, spk);
-    //my number of blocks is based off of block size and number of SUPERSECTIONS
-    numBlocks = NSUPERSECTIONS / blockSize;
-    compute_super_section_gp<<<numBlocks, blockSize >>>(sgk, spk, sspl, ssgl);//
-    //my number of blocks is based off of block size and number of SUPERSUPERSECTIONS
-    numBlocks = NSUPERSUPERSECTIONS / blockSize;
-    compute_super_super_section_gp<<<numBlocks, blockSize >>>(ssgl, sspl, sssgm, ssspm);//
-    //my number of blocks is based off of block size and number of SUPERSUPERSECTIONS (again)
-    numBlocks = NSUPERSUPERSECTIONS / blockSize;
-    compute_super_super_section_carry<<<numBlocks, blockSize >>>(ssscm, ssspm, sssgm);//
-    //my number of blocks is based off of block size and number of SUPERSECTIONS
-    numBlocks = NSUPERSECTIONS / blockSize;
-    compute_super_section_carry<<<numBlocks, blockSize >>>(ssscm, sscl, ssgl, sspl);//
-    //my number of blocks is based off of block size and number of SECTIONS
-    numBlocks = NSECTIONS / blockSize;
-    compute_section_carry<<<numBlocks, blockSize >>>(sscl, sck, sgk, spk);//
-    //my number of blocks is based off of block size and number of GROUPS
-    numBlocks = NGROUPS / blockSize;
-    compute_group_carry<<<numBlocks, blockSize >>>(sck, gcj, gpj, ggj);//
-    //my number of blocks is based off of block size and number of BITS
-    numBlocks = BITS / blockSize;
-    compute_carry<<<numBlocks, blockSize >>>(gcj, ci, gi, pi);
+    //compute_gp();
+    global_compute_gp<<<blocks,threads_per_block>>>(p_gi, p_pi, bin1, bin2);
+    cudaDeviceSynchronize();
     
-    //my number of blocks is based off of block size and number of BITS
-    numBlocks = BITS / blockSize;
-    compute_sum<<<numBlocks, blockSize >>>(sumi, bin1, bin2, ci);
-
+    compute_group_gp();
+    compute_section_gp();
+    compute_super_section_gp();
+    //compute_super_super_section_gp();
+    global_compute_super_super_section_gp<<<blocks, threads_per_block>>>( p_ssgl, p_sspl, p_sssgm, p_ssspm);
+    cudaDeviceSynchronize();
+    
+    
+    //compute_super_super_section_carry();
+    global_compute_super_super_section_carry<<<blocks, threads_per_block>>>( p_ssscm, p_sssgm, p_ssspm);
+    cudaDeviceSynchronize();
+    
+    //compute_super_section_carry();
+    global_compute_super_section_carry<<<blocks, threads_per_block>>>(p_ssscm,p_sscl,p_ssgl,p_sspl);
+    cudaDeviceSynchronize();
+    
+    //compute_section_carry();
+    global_compute_section_carry<<<blocks, threads_per_block>>>(p_sscl,p_sck,p_sgk,p_spk);
+    cudaDeviceSynchronize();
+    
+    //compute_group_carry();
+    global_compute_group_carry<<<blocks, threads_per_block>>>(p_sck, p_gcj, p_ggj, p_gpj);
+    cudaDeviceSynchronize();
+    
+    
+    //compute_carry();
+    global_compute_carry<<<blocks, threads_per_block>>>(p_gi, p_pi, p_ci, p_gcj);
+    cudaDeviceSynchronize();
+    
+    //compute_sum();
+    global_compute_sum<<<blocks, threads_per_block>>>( bin1, bin2, p_ci, p_sumi);
     cudaDeviceSynchronize();
 
   /***********************************************************************************************************/
@@ -504,7 +685,7 @@ void cla(int * bin1,int *  bin2,int *  gi,int *  pi,int *  ggj,int *  gpj,int * 
   /***********************************************************************************************************/
 }
 
-void ripple_carry_adder(int * bin1,int * bin2)
+void ripple_carry_adder()
 {
   int clast=0, cnext=0;
 
@@ -516,7 +697,7 @@ void ripple_carry_adder(int * bin1,int * bin2)
     }
 }
 
-void check_cla_rca(int * sumi,int * bin1, int * bin2,int * gi,int * pi,int * ci)
+void check_cla_rca()
 {
   for(int i = 0; i < bits; i++)
     {
@@ -533,49 +714,7 @@ void check_cla_rca(int * sumi,int * bin1, int * bin2,int * gi,int * pi,int * ci)
 }
 
 int main(int argc, char *argv[])
-{	
-    int * gi, * pi, * ci;
-    int * ggj, * gpj, * gcj;
-    int * sgk, * spk, * sck;
-    int * ssgl, * sspl, * sscl; 
-    int * sssgm, * ssspm,* ssscm;
-    int * bin1, * bin2, * sumi;
-    
-    cudaMallocManaged(& gi, bits * sizeof(int));
-    cudaMallocManaged(& pi, bits * sizeof(int));
-    cudaMallocManaged(& ci, bits * sizeof(int));
-
-    cudaMallocManaged(& ggj, ngroups * sizeof(int));
-    cudaMallocManaged(& gpj, ngroups * sizeof(int));
-    cudaMallocManaged(& gcj, ngroups * sizeof(int));
-
-    cudaMallocManaged(& sgk, nsections * sizeof(int));
-    cudaMallocManaged(& spk, nsections * sizeof(int));
-    cudaMallocManaged(& sck, nsections * sizeof(int));
-
-    cudaMallocManaged(& ssgl,nsupersections * sizeof(int));
-    cudaMallocManaged(& sspl, nsupersections * sizeof(int));
-    cudaMallocManaged(& sscl, nsupersections * sizeof(int));
-
-    cudaMallocManaged(& sssgm, nsupersupersections * sizeof(int));
-    cudaMallocManaged(& ssspm, nsupersupersections * sizeof(int));
-    cudaMallocManaged(& ssscm, nsupersupersections * sizeof(int));
-
-    cudaMallocManaged(& bin1, bits * sizeof(int));
-    cudaMallocManaged(& bin2, bits * sizeof(int));
-
-    cudaMallocManaged(& sumi, bits * sizeof(int));
-
-    /*
-    //Integer array of inputs in binary form
-    int* bin1 = NULL;
-    int* bin2 = NULL;
-    */
-
-
-
-
-
+{
   int randomGenerateFlag = 1;
   int deterministic_seed = (1<<30) - 1;
   char* hexa=NULL;
@@ -616,19 +755,45 @@ int main(int argc, char *argv[])
   bin1 = gen_formated_binary_from_hex(hexa);
   bin2 = gen_formated_binary_from_hex(hexb);
 
-  start_time = clock_now();
-  cla(bin1, bin2, gi, pi, ggj, gpj, sgk, spk, sspl, ssgl, sssgm, ssspm, ssscm, sscl, sck, gcj, ci, sumi);//note to self - here is the cla function call.
-  end_time = clock_now();
+  //allocate_cuda_memory();//allocate the memory for the cuda stuff
+  	cudaMallocManaged (&p_gi, bits*sizeof(int));
+	cudaMallocManaged (&p_pi, bits*sizeof(int));
+	cudaMallocManaged (&p_ci, bits*sizeof(int));
 
+	cudaMallocManaged (&p_ggj, ngroups*sizeof(int));
+	cudaMallocManaged (&p_gpj, ngroups*sizeof(int));
+	cudaMallocManaged (&p_gcj, ngroups*sizeof(int));
+
+	cudaMallocManaged (&p_sgk, nsections*sizeof(int));
+	cudaMallocManaged (&p_spk, nsections*sizeof(int));
+	cudaMallocManaged (&p_sck, nsections*sizeof(int));
+
+	cudaMallocManaged (&p_ssgl, nsupersections*sizeof(int));
+	cudaMallocManaged (&p_sspl, nsupersections*sizeof(int));
+	cudaMallocManaged (&p_sscl, nsupersections*sizeof(int));
+
+	cudaMallocManaged (&p_sssgm, nsupersupersections*sizeof(int));
+	cudaMallocManaged (&p_ssspm, nsupersupersections*sizeof(int));
+	cudaMallocManaged (&p_ssscm, nsupersupersections*sizeof(int));
+
+	cudaMallocManaged (&p_sumi, bits*sizeof(int));
+	cudaMallocManaged (&bin1, bits*sizeof(int));
+	cudaMallocManaged (&bin2, bits*sizeof(int));
+
+/******************************************/
+  start_time = clock_now();
+  cla(p_gi,p_pi,p_ci,   p_ggj,p_gpj,p_gcj,   p_sgk,p_spk,p_sck,   p_ssgl,p_sspl,p_sscl,   p_sssgm,p_ssspm,p_ssscm,   p_sumi,bin1,bin2);
+  end_time = clock_now();
+/******************************************/
   printf("CLA Completed in %llu cycles\n", (end_time - start_time));
 
   start_time = clock_now();
-  ripple_carry_adder(bin1, bin2);//rippler is here
+  ripple_carry_adder();
   end_time = clock_now();
 
   printf("RCA Completed in %llu cycles\n", (end_time - start_time));
 
-  check_cla_rca(sumi, bin1, bin2, gi, pi, ci);//checker is here
+  check_cla_rca();
 
   if( verbose==1 )
     {
@@ -642,8 +807,8 @@ int main(int argc, char *argv[])
   free(hex2);
   
   // free bin conversion of hex inputs
-  free(bin1);
-  free(bin2);
+  //free(bin1);
+  //free(bin2);
   
   if( verbose==1 )
     {
@@ -668,33 +833,29 @@ int main(int argc, char *argv[])
     printf("%s\n",hexSum);
   
   free(hexSum);
+  //free_cuda_memory();//free the cuda stuff
+  	cudaFree (&p_gi);
+	cudaFree (&p_pi);
+	cudaFree (&p_ci);
 
-  cudaFree(gi);
-  cudaFree(pi);
-  cudaFree(ci);
+	cudaFree (&p_ggj);
+	cudaFree (&p_gpj);
+	cudaFree (&p_gcj);
 
-  cudaFree(ggj);
-  cudaFree(gpj);
-  cudaFree(gcj);
+	cudaFree (&p_sgk);
+	cudaFree (&p_spk);
+	cudaFree (&p_sck);
 
-  cudaFree(sgk);
-  cudaFree(spk);
-  cudaFree(sck);
+	cudaFree (&p_ssgl);
+	cudaFree (&p_sspl);
+	cudaFree (&p_sscl);
 
-  cudaFree(ssgl);
-  cudaFree(sspl);
-  cudaFree(sscl);
+	cudaFree (&p_sssgm);
+	cudaFree (&p_ssspm);
+	cudaFree (&p_ssscm);
 
-  cudaFree(sssgm);
-  cudaFree(ssspm);
-  cudaFree(ssscm);
-
-
-  cudaFree(bin1);
-  cudaFree(bin2);
-
-
-  cudaFree(sumi);
-  
+	cudaFree (&p_sumi);
+	cudaFree (&bin1);
+	cudaFree (&bin2);
   return 0;
 }
