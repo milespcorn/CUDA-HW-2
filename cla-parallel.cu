@@ -130,14 +130,7 @@ int* device_grab_slice(int* input, int starti, int length)//I needed this for th
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-void compute_gp()
-{
-    for(int i = 0; i < bits; i++)
-    {
-        gi[i] = bin1[i] & bin2[i];
-        pi[i] = bin1[i] | bin2[i];
-    }
-}
+
 __global__
 void global_compute_gp(int * p_gi,int *  p_pi,int *  bin1,int *  bin2)
 {
