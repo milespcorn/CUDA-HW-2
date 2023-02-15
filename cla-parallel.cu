@@ -111,7 +111,7 @@ void read_input()
   free(in2);
 }
 __device__
-int* device_grab_slice(int* input, int starti, int length)
+int* device_grab_slice(int* input, int starti, int length)//I needed this for the globalized functions that used grab_slice
 {
   int* output;
   cudaMalloc(&output, length*sizeof(int));
@@ -124,60 +124,7 @@ int* device_grab_slice(int* input, int starti, int length)
     return output;
 }
 
-void allocate_cuda_memory()//cuda allocate pointers. Something about shared memory?
-{
-	cudaMallocManaged (&p_gi, bits*sizeof(int));
-	cudaMallocManaged (&p_pi, bits*sizeof(int));
-	cudaMallocManaged (&p_ci, bits*sizeof(int));
 
-	cudaMallocManaged (&p_ggj, ngroups*sizeof(int));
-	cudaMallocManaged (&p_gpj, ngroups*sizeof(int));
-	cudaMallocManaged (&p_gcj, ngroups*sizeof(int));
-
-	cudaMallocManaged (&p_sgk, nsections*sizeof(int));
-	cudaMallocManaged (&p_spk, nsections*sizeof(int));
-	cudaMallocManaged (&p_sck, nsections*sizeof(int));
-
-	cudaMallocManaged (&p_ssgl, nsupersections*sizeof(int));
-	cudaMallocManaged (&p_sspl, nsupersections*sizeof(int));
-	cudaMallocManaged (&p_sscl, nsupersections*sizeof(int));
-
-	cudaMallocManaged (&p_sssgm, nsupersupersections*sizeof(int));
-	cudaMallocManaged (&p_ssspm, nsupersupersections*sizeof(int));
-	cudaMallocManaged (&p_ssscm, nsupersupersections*sizeof(int));
-
-	cudaMallocManaged (&p_sumi, bits*sizeof(int));
-	cudaMallocManaged (&bin1, bits*sizeof(int));
-	cudaMallocManaged (&bin2, bits*sizeof(int));
-
-}
-void free_cuda_memory()//free pointers. Something about memory leaks? IDK I'm a math major.
-{
-	cudaFree (&p_gi);
-	cudaFree (&p_pi);
-	cudaFree (&p_ci);
-
-	cudaFree (&p_ggj);
-	cudaFree (&p_gpj);
-	cudaFree (&p_gcj);
-
-	cudaFree (&p_sgk);
-	cudaFree (&p_spk);
-	cudaFree (&p_sck);
-
-	cudaFree (&p_ssgl);
-	cudaFree (&p_sspl);
-	cudaFree (&p_sscl);
-
-	cudaFree (&p_sssgm);
-	cudaFree (&p_ssspm);
-	cudaFree (&p_ssscm);
-
-	cudaFree (&p_sumi);
-	cudaFree (&bin1);
-	cudaFree (&bin2);
-
-}
 
 /***********************************************************************************************************/
 // ADAPT AS CUDA KERNEL 
@@ -207,38 +154,7 @@ void global_compute_gp(int * p_gi,int *  p_pi,int *  bin1,int *  bin2)
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-void compute_group_gp()
-{
-    for(int j = 0; j < ngroups; j++)
-    {
-        int jstart = j*block_size;
-        int* ggj_group = grab_slice(gi,jstart,block_size);
-        int* gpj_group = grab_slice(pi,jstart,block_size);
 
-        int sum = 0;
-        for(int i = 0; i < block_size; i++)
-        {
-            int mult = ggj_group[i]; //grabs the g_i term for the multiplication
-            for(int ii = block_size-1; ii > i; ii--)
-            {
-                mult &= gpj_group[ii]; //grabs the p_i terms and multiplies it with the previously multiplied stuff (or the g_i term if first round)
-            }
-            sum |= mult; //sum up each of these things with an or
-        }
-        ggj[j] = sum;
-
-        int mult = gpj_group[0];
-        for(int i = 1; i < block_size; i++)
-        {
-            mult &= gpj_group[i];
-        }
-        gpj[j] = mult;
-
-	// free from grab_slice allocation
-	free(ggj_group);
-	free(gpj_group);
-    }
-}
 __global__
 void global_compute_group_gp(int * p_gi, int * p_pi, int * p_ggj,int * p_gpj)
 {
@@ -279,38 +195,6 @@ void global_compute_group_gp(int * p_gi, int * p_pi, int * p_ggj,int * p_gpj)
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-void compute_section_gp()
-{
-  for(int k = 0; k < nsections; k++)
-    {
-      int kstart = k*block_size;
-      int* sgk_group = grab_slice(ggj,kstart,block_size);
-      int* spk_group = grab_slice(gpj,kstart,block_size);
-      
-      int sum = 0;
-      for(int i = 0; i < block_size; i++)
-        {
-	  int mult = sgk_group[i];
-	  for(int ii = block_size-1; ii > i; ii--)
-            {
-	      mult &= spk_group[ii];
-            }
-	  sum |= mult;
-        }
-      sgk[k] = sum;
-      
-      int mult = spk_group[0];
-      for(int i = 1; i < block_size; i++)
-        {
-	  mult &= spk_group[i];
-        }
-      spk[k] = mult;
-      
-      // free from grab_slice allocation
-      free(sgk_group);
-      free(spk_group);
-    }
-}
 __global__
 void global_compute_section_gp(int * p_ggj,int * p_gpj,int * p_sgk,int * p_spk)
 {
@@ -351,38 +235,7 @@ void global_compute_section_gp(int * p_ggj,int * p_gpj,int * p_sgk,int * p_spk)
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-void compute_super_section_gp()
-{
-  for(int l = 0; l < nsupersections ; l++)
-    {
-      int lstart = l*block_size;
-      int* ssgl_group = grab_slice(sgk,lstart,block_size);
-      int* sspl_group = grab_slice(spk,lstart,block_size);
-      
-      int sum = 0;
-      for(int i = 0; i < block_size; i++)
-        {
-	  int mult = ssgl_group[i];
-	  for(int ii = block_size-1; ii > i; ii--)
-            {
-	      mult &= sspl_group[ii];
-            }
-	  sum |= mult;
-        }
-      ssgl[l] = sum;
-      
-      int mult = sspl_group[0];
-      for(int i = 1; i < block_size; i++)
-        {
-	  mult &= sspl_group[i];
-        }
-      sspl[l] = mult;
-      
-      // free from grab_slice allocation
-      free(ssgl_group);
-      free(sspl_group);
-    }
-}
+
 __global__
 void global_compute_super_section_gp(int * p_sgk, int* p_spk, int* p_ssgl, int* p_sspl)
 {
@@ -422,38 +275,7 @@ void global_compute_super_section_gp(int * p_sgk, int* p_spk, int* p_ssgl, int* 
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-void compute_super_super_section_gp()
-{
-  for(int m = 0; m < nsupersupersections ; m++)
-    {
-      int mstart = m*block_size;
-      int* sssgm_group = grab_slice(ssgl,mstart,block_size);
-      int* ssspm_group = grab_slice(sspl,mstart,block_size);
-      
-      int sum = 0;
-      for(int i = 0; i < block_size; i++)
-        {
-	  int mult = sssgm_group[i];
-	  for(int ii = block_size-1; ii > i; ii--)
-            {
-	      mult &= ssspm_group[ii];
-            }
-	  sum |= mult;
-        }
-      sssgm[m] = sum;
-      
-      int mult = ssspm_group[0];
-      for(int i = 1; i < block_size; i++)
-        {
-	  mult &= ssspm_group[i];
-        }
-      ssspm[m] = mult;
-      
-      // free from grab_slice allocation
-      free(sssgm_group);
-      free(ssspm_group);
-    }
-}
+
 __global__
 void global_compute_super_super_section_gp(int * p_ssgl,int * p_sspl,int * p_sssgm,int * p_ssspm)
 {
@@ -493,23 +315,6 @@ void global_compute_super_super_section_gp(int * p_ssgl,int * p_sspl,int * p_sss
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-void compute_super_super_section_carry()
-{
-  for(int m = 0; m < nsupersupersections; m++)
-    {
-      int ssscmlast=0;
-      if(m==0)
-        {
-	  ssscmlast = 0;
-        }
-      else
-        {
-	  ssscmlast = ssscm[m-1];
-        }
-      
-      ssscm[m] = sssgm[m] | (ssspm[m]&ssscmlast);
-    }
-}
 __global__
 void global_compute_super_super_section_carry(int * p_ssscm,int * p_sssgm,int * p_ssspm)
 {
@@ -535,23 +340,7 @@ void global_compute_super_super_section_carry(int * p_ssscm,int * p_sssgm,int * 
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-void compute_super_section_carry()
-{
-  for(int l = 0; l < nsupersections; l++)
-    {
-      int sscllast=0;
-      if(l%block_size == block_size-1)
-        {
-	  sscllast = ssscm[l/block_size];
-        }
-      else if( l != 0 )
-        {
-	  sscllast = sscl[l-1];
-        }
-      
-      sscl[l] = ssgl[l] | (sspl[l]&sscllast);
-    }
-}
+
 __global__
 void global_compute_super_section_carry(int * p_ssscm,int *  p_sscl,int *  p_ssgl,int *  p_sspl)
 {
@@ -577,23 +366,7 @@ void global_compute_super_section_carry(int * p_ssscm,int *  p_sscl,int *  p_ssg
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-void compute_section_carry()
-{
-  for(int k = 0; k < nsections; k++)
-    {
-      int scklast=0;
-      if(k%block_size==block_size-1)
-        {
-	  scklast = sscl[k/block_size];
-        }
-      else if( k != 0 )
-        {
-	  scklast = sck[k-1];
-        }
-      
-      sck[k] = sgk[k] | (spk[k]&scklast);
-    }
-}
+
 __global__
 void global_compute_section_carry(int * p_sscl,int * p_sck,int * p_sgk, int * p_spk)
 {
@@ -620,23 +393,7 @@ void global_compute_section_carry(int * p_sscl,int * p_sck,int * p_sgk, int * p_
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-void compute_group_carry()
-{
-  for(int j = 0; j < ngroups; j++)
-    {
-      int gcjlast=0;
-      if(j%block_size==block_size-1)
-        {
-	  gcjlast = sck[j/block_size];
-        }
-      else if( j != 0 )
-        {
-	  gcjlast = gcj[j-1];
-        }
-      
-      gcj[j] = ggj[j] | (gpj[j]&gcjlast);
-    }
-}
+
 __global__
 void global_compute_group_carry(int * p_sck, int * p_gcj, int * p_ggj, int * p_gpj)
 {
@@ -661,23 +418,7 @@ void global_compute_group_carry(int * p_sck, int * p_gcj, int * p_ggj, int * p_g
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-void compute_carry()
-{
-  for(int i = 0; i < bits; i++)
-    {
-      int clast=0;
-      if(i%block_size==block_size-1)
-        {
-	  clast = gcj[i/block_size];
-        }
-      else if( i != 0 )
-        {
-	  clast = ci[i-1];
-        }
-      
-      ci[i] = gi[i] | (pi[i]&clast);
-    }
-}
+
 __global__
 void global_compute_carry(int * p_gi, int * p_pi, int * p_ci, int * p_gcj)
 {
@@ -703,22 +444,6 @@ void global_compute_carry(int * p_gi, int * p_pi, int * p_ci, int * p_gcj)
 // ADAPT AS CUDA KERNEL 
 /***********************************************************************************************************/
 
-void compute_sum()
-{
-  for(int i = 0; i < bits; i++)
-    {
-      int clast=0;
-      if(i==0)
-        {
-	  clast = 0;
-        }
-      else
-        {
-	  clast = ci[i-1];
-        }
-      sumi[i] = bin1[i] ^ bin2[i] ^ clast;
-    }
-}
 __global__
 void global_compute_sum(int * bin1, int * bin2, int * p_ci, int * p_sumi)
 {
